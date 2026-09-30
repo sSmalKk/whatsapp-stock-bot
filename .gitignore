@@ -2,3 +2,9 @@
 /node_modules
 /.wwebjs_cache
 .~lock.estoque.xlsx\#
+
+# Local environment and data
+node_modules/
+.env
+logs/
+estoque.xlsx

@@ -1,229 +1,81 @@
-# 🤖 Sistema de Controle de Estoque - WhatsApp Bot
+# WhatsApp Stock Bot
 
-Sistema completo de controle de estoque integrado com WhatsApp, Excel e interface web para gerenciamento de produtos e movimentações.
+Inventory control driven by WhatsApp messages. A small business registers
+products, stock entries and sales by sending commands such as `/add 1 100` to a
+WhatsApp number; the bot validates the command, updates an Excel workbook and
+replies with the result. The same data is available through a REST API.
 
-## 🎯 **Modelo Exato Solicitado**
+The workbook is the source of truth on purpose: the owner can still open it and
+edit it by hand, and the bot reads it back.
 
-### **📦 Controle de Estoque**
-- **Modelos de 1 a 30** (códigos únicos)
-- **4 tipos de preços:**
-  - Preço de compra
-  - Preço de varejo
-  - Preço de atacado
-  - Preço de drop shipping
-- **Cálculo automático de lucros** em reais e percentuais
-- **Controle de entrada e saída** de estoque
-- **Atualização por digitação direta** na planilha
-- **Atualização por comandos** via WhatsApp
+**Stack:** Node.js · whatsapp-web.js · Express · SheetJS (xlsx)
 
-### **🔧 Sistema Técnico**
-- **3 abas Excel** organizadas e estruturadas
-- Interface web responsiva
-- Comandos WhatsApp intuitivos
-- API REST completa
-- Código modular e organizado
+## Architecture
 
-## 🏗️ **Arquitetura do Sistema**
+```text
+WhatsApp ─▶ whatsapp-bot.js ─▶ message-processor.js ─▶ command-handler.js
+                                                          │  (command → executor map)
+                                                          ▼
+                                         command-executors/*  ─▶ excel-manager.js ─▶ estoque.xlsx
+                                                          │
+                                   response-builder.js ◀──┘  (formats the reply)
 
-```
-whatsapp/
-├── modules/                    # Módulos principais
-│   ├── excel-manager.js       # Gerenciador do Excel
-│   ├── whatsapp-bot.js       # Bot do WhatsApp
-│   ├── message-processor.js   # Processador de mensagens
-│   ├── command-handler.js     # Handler principal de comandos
-│   ├── response-builder.js    # Construtor de respostas
-│   └── command-executors/     # Executores específicos
-│       ├── estoque-commands.js    # Comandos de estoque
-│       ├── item-commands.js       # Comandos de produtos
-│       └── system-commands.js     # Comandos do sistema
-├── public/                    # Interface web
-│   └── index.html            # Dashboard principal
-├── server.js                 # Servidor Express + APIs
-├── package.json              # Dependências
-└── .env                      # Variáveis de ambiente
+Express (server.js) ─▶ /api/* ─▶ excel-manager.js
 ```
 
-## 📊 **Estrutura das Planilhas Excel**
+- **Layered command handling.** Parsing, dispatch, execution and reply
+  formatting are separate modules. A new command is one executor plus one entry
+  in the map in `modules/command-handler.js`.
+- **One persistence module.** `modules/excel-manager.js` owns the workbook:
+  six sheets (Itens, Movimentações, Estoque, Vendedores, Revendedores,
+  Relatórios), with stock and profit margins recalculated from the movements.
+- **Session persistence.** The WhatsApp session uses `LocalAuth`, so the QR code
+  is scanned once.
 
-### **1. Aba "Itens" (Modelos 1-30)**
-| Campo | Descrição | Exemplo |
-|-------|-----------|---------|
-| Código | Código do produto (1-30) | 1 |
-| Nome do Produto | Nome completo | "Produto A" |
-| Categoria | Categoria do produto | "Categoria" |
-| Preço de Compra | Preço de compra | 10.00 |
-| Preço Varejo | Preço de varejo | 15.00 |
-| Preço Atacado | Preço de atacado | 13.00 |
-| Preço Drop Shipping | Preço para drop | 12.00 |
-| Lucro Varejo (R$) | Lucro em reais varejo | 5.00 |
-| Lucro Atacado (R$) | Lucro em reais atacado | 3.00 |
-| Lucro Drop (R$) | Lucro em reais drop | 2.00 |
-| % Lucro Varejo | Percentual de lucro varejo | 50.00 |
-| % Lucro Atacado | Percentual de lucro atacado | 30.00 |
-| % Lucro Drop | Percentual de lucro drop | 20.00 |
-| Estoque Mínimo | Estoque mínimo | 10 |
-| Estoque Máximo | Estoque máximo | 1000 |
-| Fornecedor | Nome do fornecedor | "Fornecedor A" |
-| Observações | Observações adicionais | "Produto premium" |
-| Data Cadastro | Data de cadastro | 2025-08-22 |
-| Última Atualização | Última atualização | 2025-08-22 |
+## Commands
 
-### **2. Aba "Movimentações" (Entrada e Saída)**
-| Campo | Descrição | Exemplo |
-|-------|-----------|---------|
-| ID | Identificador único | 1 |
-| Data/Hora | Data e hora da movimentação | 2025-08-22T10:00:00 |
-| Tipo | Tipo (Entrada/Saída) | "Entrada" |
-| Código Produto | Código do produto (1-30) | 1 |
-| Nome Produto | Nome do produto | "Produto A" |
-| Quantidade | Quantidade movimentada | 100 |
-| Preço Unitário | Preço unitário | 10.00 |
-| Preço Total | Preço total | 1000.00 |
-| Cliente | Cliente (para saídas) | "João Silva" |
-| Motivo | Motivo da movimentação | "Compra" |
-| Observações | Observações adicionais | "Entrada via WhatsApp" |
+| Command | What it does |
+| --- | --- |
+| `/produto <code> <name> <category> <buy> <retail> <wholesale> <dropship>` | Register a product |
+| `/editar <code> <field> <value>` | Edit one field of a product |
+| `/add <code> <qty>` | Stock entry |
+| `/rm <code> <qty> <customer>` | Stock exit (sale) |
+| `/estoque [date]` | Stock summary |
+| `/vendedor add\|list`, `/revendedor add\|list` | Sellers and resellers |
+| `/maisvendidos`, `/melhoresclientes` | Reports |
+| `/status`, `/ajuda` | System status and help |
 
-### **3. Aba "Estoque" (Calculado automaticamente)**
-| Campo | Descrição | Exemplo |
-|-------|-----------|---------|
-| Código | Código do produto (1-30) | 1 |
-| Nome Produto | Nome do produto | "Produto A" |
-| Categoria | Categoria do produto | "Categoria" |
-| Quantidade Atual | Quantidade em estoque | 150 |
-| Preço Compra | Preço de compra | 10.00 |
-| Preço Varejo | Preço de varejo | 15.00 |
-| Preço Atacado | Preço de atacado | 13.00 |
-| Preço Drop | Preço para drop | 12.00 |
-| Valor Total Estoque | Valor total do estoque | 1500.00 |
-| Status | Status do estoque | "Em Estoque" |
-| Última Movimentação | Última movimentação | 2025-08-22T10:00:00 |
+## REST API
 
-## 📱 **Comandos WhatsApp Disponíveis**
+`GET/POST /api/itens` · `GET/POST /api/movimentacao` · `GET /api/estoque` ·
+`GET/POST /api/vendedores` · `GET/POST /api/revendedores` ·
+`GET /api/relatorios/:tipo` · `GET /api/status`
 
-### **📚 Comandos Principais**
-| Comando | Descrição | Exemplo |
-|---------|-----------|---------|
-| `/ajuda` | Mostra esta mensagem | `/ajuda` |
-| `/estoque [data]` | Resumo do estoque | `/estoque 2025-08-22` |
-| `/status` | Status do sistema | `/status` |
+## Running locally
 
-### **📦 Gerenciar Estoque (Entrada e Saída)**
-| Comando | Descrição | Exemplo |
-|---------|-----------|---------|
-| `/add <código> <qtd>` | Registrar entrada | `/add 1 100` |
-| `/rm <código> <qtd> <cliente>` | Registrar saída | `/rm 1 5 "João Silva"` |
+Requirements: Node.js 18+ and a phone with WhatsApp to scan the QR code.
 
-### **➕ Cadastros**
-| Comando | Descrição | Exemplo |
-|---------|-----------|---------|
-| `/produto <código> <nome> <categoria> <compra> <varejo> <atacado> <drop>` | Cadastrar produto (1-30) | `/produto 1 "Produto A" "Categoria" 10.00 15.00 13.00 12.00` |
-
-## 🚀 **Instalação e Configuração**
-
-### **1. Pré-requisitos**
-- Node.js 18+ instalado
-- WhatsApp Web conectado
-- Acesso ao Excel
-
-### **2. Instalação**
-```bash
-# Clonar repositório
-git clone <url-do-repositorio>
-cd whatsapp
-
-# Instalar dependências
+```sh
 npm install
-
-# Configurar variáveis de ambiente
 cp .env.example .env
-# Editar .env com suas configurações
+npm start            # prints a QR code in the terminal; scan it with WhatsApp
 ```
 
-### **3. Configuração do .env**
-```env
-# Configurações do WhatsApp
-WHATSAPP_SESSION_PATH=./whatsapp-session
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `EXCEL_FILE_PATH` | `./estoque.xlsx` | Workbook used as the data store |
+| `SESSION_NAME` | `estoque_bot` | WhatsApp session id (`LocalAuth`) |
+| `LOG_LEVEL` | `info` | `debug` for verbose logs |
+| `PORT` | `3000` | REST API port |
 
-# Configurações do Excel
-EXCEL_FILE_PATH=./estoque.xlsx
+Logs are written to `logs/bot.log`.
 
-# Configurações do servidor
-PORT=3000
-```
+## Known limitations
 
-### **4. Executar**
-```bash
-# Desenvolvimento
-npm run dev
-
-# Produção
-npm start
-```
-
-## 💻 **Interface Web**
-
-Acesse `http://localhost:3000` para usar a interface web que inclui:
-
-- **Dashboard** com visão geral do sistema
-- **Abas organizadas** para cada funcionalidade
-- **Formulários** para cadastros
-- **Tabelas** para visualização de dados
-
-## 🔧 **Desenvolvimento**
-
-### **Adicionando Novos Módulos**
-1. Crie o arquivo em `modules/`
-2. Implemente as funções necessárias
-3. Adicione ao `command-handler.js`
-4. Atualize o `response-builder.js` se necessário
-
-### **Estrutura de um Módulo**
-```javascript
-const logger = require('../logger');
-const excelManager = require('../excel-manager');
-const responseBuilder = require('../response-builder');
-
-async function handleCommand(message, args) {
-    try {
-        // Lógica do comando
-        const response = responseBuilder.buildResponse(data);
-        message.reply(response);
-    } catch (error) {
-        logger.error('Erro:', error);
-        message.reply(`❌ Erro: ${error.message}`);
-    }
-}
-
-module.exports = { handleCommand };
-```
-
-## 📝 **Logs e Monitoramento**
-
-- **Logs automáticos** de todas as operações
-- **Arquivo de log** em `logs/bot.log`
-- **Monitoramento** via interface web
-- **Status em tempo real** do sistema
-
-## 🤝 **Contribuição**
-
-1. Fork o projeto
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Push para a branch
-5. Abra um Pull Request
-
-## 📄 **Licença**
-
-Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalhes.
-
-## 🆘 **Suporte**
-
-Para suporte e dúvidas:
-- Abra uma issue no GitHub
-- Consulte a documentação
-- Use o comando `/ajuda` no WhatsApp
-
----
-
-**Desenvolvido com ❤️ para controle eficiente de estoque seguindo exatamente o modelo solicitado**
+- Excel is not a database: there is no concurrency control, so the bot and a
+  person editing the file at the same time can overwrite each other. SQLite
+  would be the next step if the business grows.
+- `excel-manager.js` concentrates a lot of logic and should be split by sheet.
+- There are no automated tests yet.
+- `npm audit` reports advisories in `xlsx` (no fixed version on npm) and in the
+  Puppeteer version pulled by whatsapp-web.js.
